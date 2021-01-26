@@ -10,12 +10,11 @@ import plotly.graph_objects as go
 import pandas as pd
 import requests
 import database as db
-import Stock_Predict as predict
-import matplotlib.pyplot as plt
+import Stock_Predict as s_predict
+import Stock_Candlestick as s_candlestick
 from datetime import date, datetime
 from dash.dependencies import Input, Output
 from bs4 import BeautifulSoup
-from plotly.tools import mpl_to_plotly
 
 # Initialize the app
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY])
@@ -53,7 +52,7 @@ stock_data = {
 }
 
 app.layout = html.Div([
-    dbc.Row([
+    dbc.Row(
         dbc.Col(
             html.Div(
                 children=[
@@ -106,17 +105,24 @@ app.layout = html.Div([
                 ]
             ), width="auto"
         ),
+    ),
+    dbc.Row([
         dbc.Col(
             html.Div(
                 children=[dcc.Graph(id='dbGraph', config={'displayModeBar': False}, animate=True)]
-            )
+            ), width="auto"
+        ),
+        dbc.Col(
+            html.Div(
+                children=[dcc.Graph(id='candlestick', config={'displayModeBar': False}, animate=True)],
+            ), width="auto"
         ),
         dbc.Col(
             html.Div(
                 children=[dcc.Graph(id='predictGraph', config={'displayModeBar': False}, animate=True)]
-            )
-        )
-    ]),
+            ), width="auto"
+        ),
+    ])
 ])
 
 
@@ -140,7 +146,8 @@ def update_df_stock(dropdown_category):
 @app.callback(
     [
         Output('dbGraph', 'figure'),
-        Output('predict_button', 'disabled')
+        Output('candlestick', 'figure'),
+        Output('predict_button', 'disabled'),
     ], [
         Input('category-selector', 'value'),
         Input('code-selector', 'value'),
@@ -153,7 +160,9 @@ def update_db_figure(category, code, start_date, end_date):
     traces = []
     df_sub = df_STOCK[int(stock_data['cur_min_date']) <= df_STOCK['date_int']]
     df_sub = df_sub[df_sub['date_int'] <= int(stock_data['cur_max_date'])]
+    candlestick = None
     if code:
+        candlestick = s_candlestick.update_candlestick(code[len(code) - 1], stock_data['cur_min_date'], stock_data['cur_max_date'])
         for stock in code:
             traces.append(new_scatter(
                 x=df_sub[df_sub['cate_code'] == stock].index,
@@ -165,7 +174,12 @@ def update_db_figure(category, code, start_date, end_date):
         'data': data,
         'layout': new_layout(range=[df_sub.index.min(), df_sub.index.max()], name='Stock Prices')
     }
-    return figure, code is None
+    if candlestick is None:
+        candlestick = {
+            'data': data,
+            'layout': new_layout(range=[df_sub.index.min(), df_sub.index.max()], name='Candlestick')
+        }
+    return figure, candlestick, code is None
 
 
 @app.callback(
@@ -176,7 +190,7 @@ def update_predict_figure(n):
     traces = []
     range = [df_STOCK.index.min(), df_STOCK.index.max()]
     if n is not None:
-        valid, train = predict.LSTM_STOCK(stock_data['category'], stock_data['code'], 7, False, batch_size=1, epochs=5, verbose=1)
+        valid, train = s_predict.LSTM_STOCK(stock_data['category'], stock_data['code'], 7, False, batch_size=1, epochs=5, verbose=1)
         traces.append(new_scatter(x=valid.index, y=valid['收盤價'], name=stock_data['code'] + 'Real'))
         traces.append(new_scatter(x=valid.index, y=valid['Predictions'], name=stock_data['code'] + 'Predict'))
         traces.append(new_scatter(x=train.index, y=train['收盤價'], name=stock_data['code'] + 'Train'))
